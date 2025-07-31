@@ -1,0 +1,24 @@
+# Exclude Git metadata and ignore file itself
+.git
+.gitignore
+
+# Node.js dependencies & logs
+node_modules
+npm-debug.log
+yarn-error.log
+
+# Python caches
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Meteor build artifacts
+.meteor/local
+
+# OS files
+.DS_Store
+
+# Docker scratch: don’t ignore these
+!Dockerfile
+!README.md
+!.dockerignore
