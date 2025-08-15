@@ -1,36 +1,47 @@
-# Base image: Use latest Ubuntu LTS (e.g., 24.04 "Noble Numbat")
+# docker-webserver-base (SLIM) – Ubuntu 24.04 + Nginx + Passenger + Ruby + Python + Node (no Meteor CLI)
 FROM ubuntu:24.04
 
-# Metadata (optional but recommended)
-LABEL maintainer="a-atanda aatanda99@gmail.com"
-LABEL description="Base Docker image (Ubuntu) with Nginx + Passenger, Ruby, Python, and Meteor/Node.js"
+ENV DEBIAN_FRONTEND=noninteractive
 
-# Step 1: Update package list and install essential packages
+# Base runtime deps only (no build-essential to keep image small)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl gnupg2 apt-transport-https dirmngr \
-    build-essential git \
+    ca-certificates curl gnupg2 dirmngr apt-transport-https \
     ruby-full python3 python3-pip \
-    nginx libnginx-mod-http-passenger
+  && rm -rf /var/lib/apt/lists/*
 
-# Step 2: Install Node.js (latest LTS) via NodeSource
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
- && apt-get install -y --no-install-recommends nodejs
+# Add Phusion Passenger APT repo for Ubuntu 24.04 (noble) and install Nginx + Passenger
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl gnupg2 dirmngr apt-transport-https && \
+    curl -fsSL https://oss-binaries.phusionpassenger.com/auto-software-signing-gpg-key.txt \
+      | gpg --dearmor > /usr/share/keyrings/phusion.gpg && \
+    sh -c 'echo deb [signed-by=/usr/share/keyrings/phusion.gpg] https://oss-binaries.phusionpassenger.com/apt/passenger noble main > /etc/apt/sources.list.d/passenger.list' && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends nginx libnginx-mod-http-passenger && \
+    ln -sf /usr/share/nginx/modules-available/mod-http-passenger.load \
+           /etc/nginx/modules-enabled/50-mod-http-passenger.conf && \
+    if [ ! -f /etc/nginx/conf.d/mod-http-passenger.conf ]; then \
+      printf 'passenger_root /usr/lib/ruby/vendor_ruby/phusion_passenger/locations.ini;\npassenger_ruby /usr/bin/passenger_free_ruby;\n' \
+        > /etc/nginx/conf.d/mod-http-passenger.conf; \
+    fi && \
+    rm -rf /var/lib/apt/lists/*
 
-# Step 3: Install Meteor (latest) via npm
-RUN npm install -g meteor --unsafe-perm
+# Node.js LTS (v20) via NodeSource
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y --no-install-recommends nodejs && \
+    # keep it slim: drop npm caches
+    npm cache clean --force && rm -rf /root/.npm && \
+    rm -rf /var/lib/apt/lists/*
 
-# Step 4: Add a non-root user for running apps
-RUN adduser --disabled-password --gecos '' app \
- && mkdir -p /home/app/webapp && chown -R app:app /home/app
+# Non-root app user & directories
+RUN adduser --disabled-password --gecos '' app && \
+    mkdir -p /home/app/webapp && chown -R app:app /home/app
 
-# Step 5: Configure Nginx/Passenger
-# Remove default site and add our custom Nginx config
+# Nginx site config + default index
 RUN rm -f /etc/nginx/sites-enabled/default
 COPY docker-webserver.conf /etc/nginx/sites-enabled/docker-webserver.conf
-
-# Copy a default static index page
 COPY index.html /var/www/html/index.html
 
-# Expose port 80 and set the default command to start Nginx in the foreground
+# Validate config at build time
+RUN nginx -t
+
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
